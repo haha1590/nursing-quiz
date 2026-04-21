@@ -7,7 +7,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>EduQuiz AI Master v26 Final</title>
 
-    <!-- 라이브러리 로드 -->
+    <!-- Essential Libraries -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -30,7 +30,7 @@
         import { getFirestore, collection, doc, onSnapshot, addDoc, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-        // --- 🧚‍♀️ 선생님의 Firebase 설정 (v26 보안 규칙과 호환) ---
+        // --- 🧚‍♀️ 선생님의 Firebase 설정 ---
         const firebaseConfig = {
             apiKey: "AIzaSyBuKO5Iia70QyrgrXGgRqJsLChHhHMFREg",
             authDomain: "edu-quiz-lovely.firebaseapp.com",
@@ -45,10 +45,9 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         
-        // --- [매우 중요] 보안 규칙(nursing-quiz-final-v26)과 반드시 일치해야 합니다 ---
+        // --- [중요] Canvas의 보안 규칙과 일치하는 ID ---
         const appId = 'nursing-quiz-final-v26'; 
 
-        // Gemini AI 설정
         const geminiApiKey = "AIzaSyALNeGgRQZz1Z1D1aNW_RX0ZHHg1_pPtlM"; 
         const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
 
@@ -77,21 +76,19 @@
             const [pwInput, setPwInput] = useState('');
             const teacherPassword = "1234";
 
-            // 1. 서버 인증 (익명 로그인)
+            // 1. 인증 및 사용자 상태 감시
             useEffect(() => {
                 const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
-                    if (u) { 
-                        setUser(u);
-                        setStatus(null);
-                    } else { 
+                    if (u) { setUser(u); setStatus(null); } 
+                    else { 
                         try { await signInAnonymously(auth); } 
-                        catch (err) { setStatus({ type: 'error', text: "클라우드 연결을 시도하고 있어요..." }); } 
+                        catch (err) { setStatus({ type: 'error', text: "클라우드 연결 대기 중..." }); } 
                     }
                 });
                 return () => unsubscribeAuth();
             }, []);
 
-            // 2. 실시간 자료 연동 (보안 규칙 v26 경로 사용)
+            // 2. 실시간 자료 동기화
             useEffect(() => {
                 if (!user) return;
                 const unitsCol = collection(db, 'artifacts', appId, 'public', 'data', 'units');
@@ -99,12 +96,11 @@
                     const data = ss.docs.map(d => ({ id: d.id, ...d.data() }));
                     setUnits(data.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0)));
                 }, (err) => {
-                    setStatus({ type: 'error', text: `권한 에러: 보안 규칙(v26) 게시를 확인하세요.` });
+                    setStatus({ type: 'error', text: `권한 에러: Rules 게시를 확인하세요.` });
                 });
                 return () => unsubscribe();
             }, [user]);
 
-            // PDF/이미지 처리 (용량 압축 포함)
             const processFile = (file) => {
                 return new Promise((resolve) => {
                     const reader = new FileReader();
@@ -124,7 +120,7 @@
                                 canvas.width = width; canvas.height = height;
                                 const ctx = canvas.getContext('2d');
                                 ctx.drawImage(img, 0, 0, width, height);
-                                resolve({ data: canvas.toDataURL('image/jpeg', 0.3), type: 'image/jpeg' });
+                                resolve({ data: canvas.toDataURL('image/jpeg', 0.35), type: 'image/jpeg' });
                             };
                         }
                     };
@@ -133,15 +129,15 @@
 
             const handleCreateUnit = async (e) => {
                 const files = Array.from(e.target.files);
-                if (!newUnitTitle.trim()) { setStatus({ type: 'error', text: '단원 제목을 적어주세요!' }); return; }
+                if (!newUnitTitle.trim()) { setStatus({ type: 'error', text: '단원 제목을 먼저 적어주세요!' }); return; }
                 if (files.length === 0) return;
 
                 setLoading(true);
-                setStatus({ type: 'info', text: '자료를 전송하고 있어요...' });
+                setStatus({ type: 'info', text: '자료를 구름에 올리는 중...' });
                 try {
                     const processedFiles = await Promise.all(files.map(file => processFile(file)));
                     const totalSize = JSON.stringify(processedFiles).length;
-                    if (totalSize > 980000) throw new Error("전송 용량이 너무 큽니다. 사진 한 장씩 올려보세요.");
+                    if (totalSize > 980000) throw new Error("전체 용량이 너무 큽니다. 사진이나 PDF 페이지를 줄여주세요.");
 
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'units'), {
                         title: newUnitTitle,
@@ -152,7 +148,7 @@
                     setStatus({ type: 'success', text: '등록 성공! ✨' });
                     e.target.value = '';
                 } catch (err) { 
-                    setStatus({ type: 'error', text: err.message || "등록 실패! 권한을 확인하세요." });
+                    setStatus({ type: 'error', text: err.message || "등록 실패!" });
                 } finally { setLoading(false); }
             };
 
@@ -172,7 +168,6 @@
                 try {
                     const parts = [{ text: `단원명: ${selectedUnit.title}` }];
                     selectedUnit.files.forEach(f => {
-                        // PDF 또는 이미지 데이터 전송
                         parts.push({ inlineData: { mimeType: f.type, data: f.data.split(',')[1] } });
                     });
 
@@ -185,7 +180,7 @@
                     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
                     setCurrentQuestions(JSON.parse(rawText.replace(/```json|```/gi, "").trim()));
                     setCurrentQuestionIndex(0); setAnswers({}); setView('quiz'); setStartTime(Date.now()); setStatus(null);
-                } catch (err) { setStatus({ type: 'error', text: "AI 분석 실패! 자료 용량을 줄여보세요." }); }
+                } catch (err) { setStatus({ type: 'error', text: "AI 분석 실패! 사진으로 올려보세요." }); }
                 finally { setLoading(false); }
             };
 
@@ -205,15 +200,15 @@
             );
 
             if (view === 'teacher') return (
-                <div className="min-h-screen bg-orange-50/30 flex flex-col">
+                <div className="min-h-screen bg-orange-50/30 flex flex-col items-center">
                     <Header />
-                    <main className="max-w-2xl w-full mx-auto p-6 space-y-8">
-                        <button onClick={() => setView('landing')} className="text-orange-400 font-black flex items-center gap-2"><Icon name="chevron-left" /> 메인으로</button>
-                        <div className="bg-white p-8 rounded-[3rem] shadow-xl border-4 border-orange-100 text-center space-y-6">
+                    <main className="max-w-2xl w-full p-6 space-y-8">
+                        <button onClick={() => setView('landing')} className="text-orange-400 font-black flex items-center gap-2 text-left"><Icon name="chevron-left" /> 메인으로</button>
+                        <div className="bg-white p-8 rounded-[3.5rem] shadow-xl border-4 border-orange-100 text-center space-y-6">
                             <div className="bg-orange-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto text-orange-50"><Icon name="folder-plus" size={32}/></div>
-                            <h3 className="text-xl font-black text-slate-700 leading-none text-center">단원 등록소</h3>
+                            <h3 className="text-xl font-black text-slate-700">단원 등록소</h3>
                             <div className="space-y-4 text-left">
-                                <input type="text" placeholder="단원 이름을 입력하세요 (예: 1. 구강)" value={newUnitTitle} onChange={(e) => setNewUnitTitle(e.target.value)} className="w-full px-6 py-4 rounded-2xl border-2 border-orange-50 bg-slate-50 outline-none focus:border-orange-400 font-bold" />
+                                <input type="text" placeholder="단원 이름을 적어주세요 (예: 1. 구강 간호)" value={newUnitTitle} onChange={(e) => setNewUnitTitle(e.target.value)} className="w-full px-6 py-4 rounded-2xl border-2 border-orange-50 bg-slate-50 outline-none focus:border-orange-400 font-bold" />
                                 <label className={`cursor-pointer w-full py-5 rounded-2xl font-black transition-all flex items-center justify-center gap-3 shadow-lg ${loading ? 'bg-slate-100 text-slate-400' : 'bg-orange-400 text-white active:scale-95'}`}>
                                     <Icon name={loading ? "refresh-cw" : "file-up"} className={loading ? "animate-spin" : ""} />
                                     <span>{loading ? '처리 중...' : '사진 또는 PDF 등록'}</span>
@@ -221,9 +216,9 @@
                                 </label>
                             </div>
                         </div>
-                        <div className="space-y-3 pb-20 text-left">
-                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest px-4">등록된 단원 목록 ({units.length})</h4>
-                            {units.length === 0 ? <div className="text-center py-10 text-slate-300 font-bold italic text-center">아직 자료가 없어요 😿</div> : units.map(u => (
+                        <div className="space-y-3 pb-20 w-full text-left">
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest px-4">등록된 단원 ({units.length})</h4>
+                            {units.length === 0 ? <div className="text-center py-10 text-slate-300 font-bold italic">자료가 아직 없어요 😿</div> : units.map(u => (
                                 <div key={u.id} className="bg-white p-6 rounded-3xl flex justify-between items-center shadow-sm border border-orange-50">
                                     <span className="font-bold text-slate-700">{u.title}</span>
                                     <button onClick={() => { if(confirm('삭제할까요?')) deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'units', u.id)) }} className="text-rose-200 hover:text-rose-500 p-2"><Icon name="trash-2" /></button>
@@ -238,7 +233,7 @@
                 <div className="min-h-screen flex flex-col items-center">
                     <Header />
                     <main className="max-w-xl w-full p-6 space-y-10">
-                        <button onClick={() => setView('landing')} className="text-pink-400 font-black flex items-center gap-2"><Icon name="chevron-left" /> 메인으로</button>
+                        <button onClick={() => setView('landing')} className="text-pink-400 font-black flex items-center gap-2 text-left"><Icon name="chevron-left" /> 메인으로</button>
                         <div className="bg-white rounded-[4rem] p-10 shadow-2xl border-8 border-white space-y-8 text-center">
                             <h2 className="text-3xl font-black text-slate-700 italic leading-none tracking-tighter text-center">Study Mode ✨</h2>
                             <section className="text-left space-y-4">
@@ -303,9 +298,9 @@
                     <Header />
                     <main className="w-full max-w-md p-6 space-y-6 overflow-y-auto pb-24 text-center">
                         <div className="bg-white rounded-[4rem] shadow-2xl p-10 text-center border-8 border-white">
-                            <div className="bg-yellow-300 w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-white shadow-xl animate-bounce"><Icon name="star" size={40} fill="currentColor" /></div>
+                            <div className="bg-yellow-300 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-white shadow-xl animate-bounce"><Icon name="star" size={50} fill="currentColor" /></div>
                             <h2 className="text-7xl font-black mb-2 text-slate-800 tracking-tighter text-center">{quizResults?.percentage}%</h2>
-                            <p className="font-black text-pink-400 text-xl mb-10">{quizResults?.score} / {quizResults?.total} 맞힘!</p>
+                            <p className="font-black text-pink-400 text-xl mb-10 text-center">{quizResults?.score} / {quizResults?.total} 맞힘!</p>
                             <div className="space-y-6 text-left mb-10 border-t border-pink-50 pt-8">
                                 {currentQuestions.map((q, i) => (
                                     <div key={i} className={`p-6 rounded-3xl border-2 ${answers[i] === q.correctAnswer ? 'border-emerald-100 bg-emerald-50/30' : 'border-rose-100 bg-rose-50/30'}`}>
@@ -338,8 +333,8 @@
                         <div className="bg-pink-400 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 text-white shadow-lg animate-bounce">
                             <Icon name="heart" size={40} fill="currentColor" />
                         </div>
-                        <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter text-center text-center">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-purple-500">AI 캔디 퀴즈</span></h2>
-                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 text-center uppercase leading-none text-center">Master Edition v26 Final ✨</p>
+                        <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter text-center">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-purple-500">AI 캔디 퀴즈</span></h2>
+                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 text-center leading-none uppercase text-center">Master Edition v26 Final ✨</p>
                         <div className="space-y-4">
                             <button onClick={() => setShowPwModal(true)} className="w-full bg-orange-50 hover:bg-orange-100 p-7 rounded-[2.5rem] text-orange-600 font-black flex items-center justify-center gap-4 transition-all border-2 border-orange-100 shadow-sm text-center active:scale-95"><Icon name="key" /> 선생님 모드</button>
                             <button onClick={() => units.length > 0 ? setView('student_setup') : alert('자료를 먼저 등록해주세요!')} className="w-full bg-pink-50 hover:bg-pink-100 p-7 rounded-[2.5rem] text-pink-600 font-black flex items-center justify-center gap-4 transition-all border-2 border-pink-100 shadow-sm text-center active:scale-95"><Icon name="graduation-cap" /> 학생 모드</button>
