@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>EduQuiz AI Master v32 Final</title>
+    <title>EduQuiz AI Master v33 Final</title>
 
     <!-- 필수 라이브러리 로드 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -29,9 +29,9 @@
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, doc, onSnapshot, addDoc, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // --- 🧚‍♀️ Firebase Config (선생님 전용 설정) ---
+        // --- 🧚‍♀️ Firebase Config ---
         const firebaseConfig = {
             apiKey: "AIzaSyBuKO5Iia70QyrgrXGgRqJsLChHhHMFREg",
             authDomain: "edu-quiz-lovely.firebaseapp.com",
@@ -47,9 +47,9 @@
         const db = getFirestore(app);
         const appId = 'nursing-quiz-final-v26';
 
-        // --- 🧠 Gemini AI API Key (선생님 키) ---
+        // --- 🧠 Gemini AI API Key ---
         const geminiApiKey = "AIzaSyALNeGgRQZz1Z1D1aNW_RX0ZHHg1_pPtlM"; 
-        const MODEL_NAME = "gemini-2.0-flash-exp"; // 더 빠르고 안정적인 모델로 변경 시도
+        const MODEL_NAME = "gemini-1.5-flash"; // 가장 범용적이고 안정적인 모델로 교체
 
         const { useState, useEffect, useRef } = React;
 
@@ -75,24 +75,10 @@
             const [pwInput, setPwInput] = useState('');
             const teacherPassword = "1234";
 
-            // API 호출 지연 방지 및 상세 로그 출력 fetch
-            const fetchQuizData = async (url, options) => {
-                const response = await fetch(url, options);
-                if (!response.ok) {
-                    const errorDetail = await response.json();
-                    throw new Error(errorDetail.error?.message || "AI 서버 응답 오류");
-                }
-                return response.json();
-            };
-
             // 1. Authentication
             useEffect(() => {
                 const initAuth = async () => {
-                    try {
-                        await signInAnonymously(auth);
-                    } catch (err) {
-                        setUser({ uid: 'guest', isAnonymous: true });
-                    }
+                    try { await signInAnonymously(auth); } catch (err) { setUser({ uid: 'guest' }); }
                 };
                 initAuth();
                 const unsubscribe = onAuthStateChanged(auth, (u) => { if (u) setUser(u); });
@@ -105,8 +91,9 @@
                 const unsubscribe = onSnapshot(unitsCol, (ss) => {
                     const data = ss.docs.map(d => ({ id: d.id, ...d.data() }));
                     setUnits(data.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0)));
+                    setStatus(null);
                 }, (err) => {
-                    setStatus({ type: 'error', text: "데이터베이스 연결 오류" });
+                    setStatus({ type: 'error', text: "DB 연결 확인 중..." });
                 });
                 return () => unsubscribe();
             }, []);
@@ -123,7 +110,7 @@
                             img.src = e.target.result;
                             img.onload = () => {
                                 const canvas = document.createElement('canvas');
-                                const maxDim = 800; // 용량 최적화 위해 리사이징
+                                const maxDim = 800;
                                 let width = img.width, height = img.height;
                                 if (width > height && width > maxDim) { height *= maxDim / width; width = maxDim; }
                                 else if (height > maxDim) { width *= maxDim / height; height = maxDim; }
@@ -141,16 +128,17 @@
                 const files = Array.from(e.target.files);
                 if (!newUnitTitle.trim() || files.length === 0) return;
                 setLoading(true);
-                setStatus({ type: 'info', text: "자료 등록 중..." });
+                setStatus({ type: 'info', text: "자료를 구름에 올리는 중..." });
                 try {
                     const processedFiles = await Promise.all(files.map(file => processFile(file)));
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'units'), {
                         title: newUnitTitle, files: processedFiles, createdAt: serverTimestamp()
                     });
                     setNewUnitTitle('');
-                    setStatus({ type: 'success', text: "자료가 안전하게 저장되었습니다! ✨" });
+                    setStatus({ type: 'success', text: "등록 성공! ✨" });
+                    e.target.value = '';
                 } catch (err) { 
-                    setStatus({ type: 'error', text: "저장 실패! 용량이 너무 큽니다." });
+                    setStatus({ type: 'error', text: "저장 실패! 사진 장수를 줄여주세요." });
                 } finally { setLoading(false); }
             };
 
@@ -159,19 +147,19 @@
                 else { setStatus({ type: 'error', text: "비밀번호 오류" }); setPwInput(''); }
             };
 
-            // [수정] 정교해진 AI 퀴즈 생성 및 에러 추적
+            // AI 퀴즈 생성 및 상세 에러 보고
             const generateQuiz = async () => {
                 if (!selectedUnit) return;
                 setLoading(true);
                 setStatus({ type: 'info', text: "AI가 자료를 읽고 있습니다..." });
                 
-                const systemPrompt = `당신은 보건간호과 교사입니다. 제공된 이미지/PDF 자료를 분석하여 학생용 5지선다형 퀴즈 5개를 만드세요. 반드시 아래 형식의 순수 JSON 배열로만 응답하세요: [{"id":1,"question":"질문","options":["1","2","3","4","5"],"correctAnswer":0,"explanation":"해설"}]`;
+                const systemPrompt = `보건간호과 선생님입니다. 제공된 자료로 5지선다형 퀴즈 5개를 만드세요. 반드시 아래 형식의 순수 JSON 배열로만 응답하세요. 다른 설명은 하지 마세요: [{"id":1,"question":"질문","options":["1","2","3","4","5"],"correctAnswer":0,"explanation":"해설"}]`;
                 
                 try {
                     const contents = [{
                         role: "user",
                         parts: [
-                            { text: `단원 제목: ${selectedUnit.title}. 위 단원의 내용을 바탕으로 문제를 생성해줘.` },
+                            { text: "제공된 이미지 자료를 분석해서 퀴즈를 만들어줘." },
                             ...selectedUnit.files.map(f => ({
                                 inlineData: {
                                     mimeType: f.type.includes('pdf') ? 'application/pdf' : 'image/jpeg',
@@ -181,14 +169,20 @@
                         ]
                     }];
 
-                    const responseData = await fetchQuizData(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${geminiApiKey}`, {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${geminiApiKey}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ contents, systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json" } })
                     });
                     
-                    const rawText = responseData.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (!rawText) throw new Error("AI가 응답을 생성하지 못했습니다.");
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.error?.message || "AI 서버 통신 오류");
+                    }
+
+                    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!rawText) throw new Error("AI가 문제를 생성하지 못했습니다. (내용 부족)");
                     
                     const cleanJson = rawText.replace(/```json/gi, "").replace(/```/gi, "").trim();
                     const parsedQuestions = JSON.parse(cleanJson);
@@ -203,7 +197,7 @@
                     console.error("Quiz Error:", err);
                     setStatus({ 
                         type: 'error', 
-                        text: `AI 오류: ${err.message.includes('API key') ? '키 인증 실패' : '자료가 너무 많거나 복잡합니다.'}` 
+                        text: `AI 오류: ${err.message}` // 이제 진짜 이유를 화면에 보여줍니다.
                     }); 
                 } finally { setLoading(false); }
             };
@@ -215,7 +209,7 @@
                         <h1 className="text-lg font-black text-pink-500 italic leading-none">EduQuiz Sweet</h1>
                     </div>
                     {status && (
-                        <div className={`fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl font-bold text-[11px] z-[200] animate-bounce border-2 ${status.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-500' : 'bg-emerald-50 border-emerald-200 text-emerald-500'}`}>
+                        <div className={`fixed top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl font-bold text-[10px] z-[200] animate-bounce border-2 ${status.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-500' : 'bg-emerald-50 border-emerald-200 text-emerald-500'}`}>
                             {status.text}
                             <button onClick={() => setStatus(null)} className="ml-2 font-black opacity-30">×</button>
                         </div>
@@ -241,8 +235,8 @@
                             </div>
                         </div>
                         <div className="space-y-3 pb-20 w-full text-left">
-                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest px-4">등록된 목록 ({units.length})</h4>
-                            {units.length === 0 ? <div className="text-center py-10 text-slate-300 font-bold italic">자료를 기다리고 있어요 😿</div> : units.map(u => (
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest px-4 font-bold">등록된 목록 ({units.length})</h4>
+                            {units.length === 0 ? <div className="text-center py-10 text-slate-300 font-bold italic text-center">자료가 아직 없어요 😿</div> : units.map(u => (
                                 <div key={u.id} className="bg-white p-6 rounded-3xl flex justify-between items-center shadow-sm border border-orange-50 hover:shadow-md transition-shadow">
                                     <span className="font-bold text-slate-700">{u.title}</span>
                                     <button onClick={() => { if(confirm('삭제할까요?')) deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'units', u.id)) }} className="text-rose-200 hover:text-rose-500 p-2"><Icon name="trash-2" /></button>
@@ -261,8 +255,8 @@
                         <div className="bg-white rounded-[4rem] p-10 shadow-2xl border-8 border-white space-y-8">
                             <h2 className="text-3xl font-black text-slate-700 italic leading-none tracking-tighter">Study Mode ✨</h2>
                             <section className="text-left space-y-4">
-                                <h4 className="text-xs font-black text-pink-400 uppercase tracking-widest flex items-center gap-2"><Icon name="heart" size={14} fill="currentColor" /> 1. 공부할 단원 선택</h4>
-                                <div className="grid gap-2 max-h-64 overflow-y-auto custom-scrollbar">
+                                <h4 className="text-xs font-black text-pink-400 uppercase tracking-widest flex items-center gap-2 font-bold"><Icon name="heart" size={14} fill="currentColor" /> 1. 공부할 단원 선택</h4>
+                                <div className="grid gap-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
                                     {units.length === 0 ? <div className="text-center py-10 text-slate-300 font-bold italic">등록된 자료가 없어요 😿</div> : units.map(u => (
                                         <button key={u.id} onClick={() => setSelectedUnit(u)} className={`text-left px-5 py-4 rounded-2xl border-2 transition-all font-bold flex items-center justify-between ${selectedUnit?.id === u.id ? 'border-pink-300 bg-pink-50 text-pink-600 shadow-lg' : 'border-slate-50 bg-slate-50/50 hover:border-pink-100'}`}>
                                             <span>{u.title}</span>
@@ -271,8 +265,8 @@
                                     ))}
                                 </div>
                             </section>
-                            <button onClick={generateQuiz} disabled={!selectedUnit || loading} className={`w-full py-6 rounded-3xl font-black text-xl shadow-xl transition-all ${loading ? 'bg-slate-100 text-slate-300' : 'bg-gradient-to-r from-pink-400 to-purple-500 text-white active:scale-95'}`}>
-                                {loading ? 'AI가 분석 중입니다...' : '학습 시작하기! ✨'}
+                            <button onClick={generateQuiz} disabled={!selectedUnit || loading} className={`w-full py-6 rounded-3xl font-black text-xl shadow-xl transition-all ${loading ? 'bg-slate-100 text-slate-300' : 'bg-gradient-to-r from-pink-400 to-purple-500 text-white active:scale-95 shadow-pink-100'}`}>
+                                {loading ? 'AI 분석 중...' : '학습 시작하기! ✨'}
                             </button>
                         </div>
                     </main>
@@ -319,13 +313,13 @@
                     <main className="w-full max-w-md p-6 space-y-6 overflow-y-auto pb-24 text-center">
                         <div className="bg-white rounded-[4rem] shadow-2xl p-10 text-center border-8 border-white">
                             <div className="bg-yellow-300 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-white shadow-xl animate-bounce text-center shadow-yellow-100"><Icon name="star" size={50} fill="currentColor" /></div>
-                            <h2 className="text-7xl font-black mb-2 text-slate-800 tracking-tighter">{quizResults?.percentage}%</h2>
+                            <h2 className="text-7xl font-black mb-2 text-slate-800 tracking-tighter text-center">{quizResults?.percentage}%</h2>
                             <p className="font-black text-pink-400 text-xl mb-10">{quizResults?.score} / {quizResults?.total} 맞힘!</p>
                             <div className="space-y-6 text-left mb-10 border-t border-pink-50 pt-8">
                                 {currentQuestions.map((q, i) => (
                                     <div key={i} className={`p-6 rounded-3xl border-2 ${answers[i] === q.correctAnswer ? 'border-emerald-100 bg-emerald-50/30' : 'border-rose-100 bg-rose-50/30'}`}>
-                                        <p className="font-bold text-slate-700 mb-2 leading-tight">{i+1}. {q.question}</p>
-                                        <p className="text-xs text-slate-400 leading-relaxed italic border-t border-white/50 pt-2 mt-2">{q.explanation}</p>
+                                        <p className="font-bold text-slate-700 mb-2 leading-tight text-left">{i+1}. {q.question}</p>
+                                        <p className="text-xs text-slate-400 leading-relaxed italic border-t border-white/50 pt-2 mt-2 text-left">{q.explanation}</p>
                                     </div>
                                 ))}
                             </div>
@@ -339,9 +333,9 @@
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
                     {showPwModal && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
-                            <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl text-center border-4 border-orange-50 animate-shake">
+                            <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl text-center border-4 border-orange-50 animate-shake text-center">
                                 <h3 className="text-xl font-black text-slate-700 mb-6 text-center">선생님 인증</h3>
-                                <input autoFocus type="password" placeholder="Pass" maxLength={4} value={pwInput} onChange={(e) => setPwInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && checkPassword()} className="w-full px-6 py-5 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none focus:border-orange-300 text-center font-bold text-2xl tracking-[0.5em] mb-6 shadow-inner" />
+                                <input autoFocus type="password" placeholder="Pass" maxLength={4} value={pwInput} onChange={(e) => setPwInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && checkPassword()} className="w-full px-6 py-5 rounded-2xl bg-slate-50 border-2 border-slate-100 outline-none focus:border-orange-300 text-center font-bold text-2xl tracking-[0.5em] mb-6 shadow-inner text-center" />
                                 <div className="flex gap-3 text-center">
                                     <button onClick={() => { setShowPwModal(false); setPwInput(''); }} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-500 font-bold">취소</button>
                                     <button onClick={checkPassword} className="flex-1 py-4 rounded-2xl bg-orange-400 text-white font-bold">확인</button>
@@ -354,7 +348,7 @@
                             <Icon name="heart" size={40} fill="currentColor" />
                         </div>
                         <h2 className="text-4xl font-black mb-4 text-slate-800 leading-tight tracking-tighter text-center">간호의 기초<br/><span className="bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-purple-500 text-center">AI 캔디 퀴즈</span></h2>
-                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 text-center leading-none">Master Edition v32 Final ✨</p>
+                        <p className="text-slate-400 font-bold mb-14 text-[10px] tracking-[0.3em] uppercase italic opacity-70 text-center leading-none">Master Edition v33 Final ✨</p>
                         <div className="space-y-4 text-center">
                             <button onClick={() => setShowPwModal(true)} className="w-full bg-orange-50 hover:bg-orange-100 p-7 rounded-[2.5rem] text-orange-600 font-black flex items-center justify-center gap-4 transition-all border-2 border-orange-100 shadow-sm active:scale-95"><Icon name="key" /> 선생님 모드</button>
                             <button onClick={() => units.length > 0 ? setView('student_setup') : alert('자료를 먼저 등록해주세요!')} className="w-full bg-pink-50 hover:bg-pink-100 p-7 rounded-[2.5rem] text-pink-600 font-black flex items-center justify-center gap-4 transition-all border-2 border-pink-100 shadow-sm active:scale-95"><Icon name="graduation-cap" /> 학생 모드</button>
